@@ -17,21 +17,20 @@ function* getDomainVariations(base: string): Generator<string> {
   }
 }
 
-type Result = {
-  domain: string;
-  available: boolean;
-  registrar?: string;
-  registrant?: string;
-};
+enum Ip2WhoisErrorCodes {
+  NoDataFound = "106",
+}
 
-type Ip2WhoasResponseData = {
-  error_code?: string;
+type Ip2WhoisResponseData = {
+  error_code?: Ip2WhoisErrorCodes | string;
+  error_message?: string;
   domain?: string;
-  registrar?: { name: string };
-  registrant?: { name: string };
+  status?: string;
+  registrar?: { name?: string; url?: string };
+  registrant?: { name?: string; organization?: string; email?: string };
 };
 
-async function checkDomain(domain: string): Promise<Result> {
+async function checkDomain(domain: string): Promise<boolean | string> {
   const apiKey = process.env.API_KEY;
   if (typeof apiKey !== "string") {
     throw new Error("Please set API_KEY env variable");
@@ -39,19 +38,22 @@ async function checkDomain(domain: string): Promise<Result> {
   const response = await axios.get(
     `https://api.ip2whois.com/v1?key=${apiKey}&domain=${domain}`
   );
-  const data = response.data as Ip2WhoasResponseData;
+  const data = response.data as Ip2WhoisResponseData;
   if (typeof data !== "object") {
-    throw new Error(`Unexpected response from ip2whois: ${data}`);
+    return `unexpected response from ip2whois: ${data}`;
   }
-  const result: Result = {
-    domain,
-    available: !data.registrant,
-  };
-  if (!result.available) {
-    result.registrant = data.registrant?.name;
-    result.registrar = data.registrar?.name;
-  }
-  return result;
+  return data.error_code
+    ? data.error_code !== Ip2WhoisErrorCodes.NoDataFound
+      ? `error ${data.error_code}: ${data.error_message}`
+      : true
+    : data.registrar
+    ? `status: ${data.status}, registrant: ${
+        data.registrant?.organization ||
+        data.registrant?.name ||
+        data.registrant?.email ||
+        "<unknown>"
+      }, registrar: ${data.registrar.url || data.registrar.name || "<unknown>"}`
+    : true;
 }
 
 async function start(opts: { lines: string[] }) {
@@ -60,12 +62,10 @@ async function start(opts: { lines: string[] }) {
     .filter((s) => /\S/.test(s))
     .map((s) => s.toLocaleLowerCase())
     .flatMap((domain) => Array.from(getDomainVariations(domain)));
-  const results = await Promise.all(domains.map(checkDomain));
-  const report = results.reduce<Record<string, boolean | string>>((p, c) => {
-    p[c.domain] = c.available ? true : `${c.registrant} (${c.registrar})`;
-    return p;
-  }, {});
-  console.log(report);
+  const results = await Promise.all(
+    domains.map(async (domain) => [domain, await checkDomain(domain)])
+  );
+  console.log(Object.fromEntries(results));
 }
 
 (() => {
