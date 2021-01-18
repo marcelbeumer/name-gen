@@ -3,6 +3,7 @@ import readline from "readline";
 function chunkWord(word: string): string[] {
   const a = "[euioa]";
   const r = "[^euioa]";
+  const xr = "([qwtpdfgkcb]r|chr?|str?)";
   const rx = "r[tpsdfgklzbnm]";
   return [
     // ar, aar
@@ -17,6 +18,9 @@ function chunkWord(word: string): string[] {
     // case ark, aark, arp, ...
     ...(word.match(new RegExp(`${a}${rx}`, "g")) ?? []),
     ...(word.match(new RegExp(`${a}{2,}${rx}`, "g")) ?? []),
+    // case kra, kraa, pra, ...
+    ...(word.match(new RegExp(`${xr}${a}`, "g")) ?? []),
+    ...(word.match(new RegExp(`${xr}${a}{2,}`, "g")) ?? []),
   ];
 }
 
